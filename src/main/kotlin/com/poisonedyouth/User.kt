@@ -3,7 +3,7 @@ package com.poisonedyouth
 import com.poisonedyouth.annotation.GenerateTable
 import java.time.LocalDate
 
-@GenerateTable
+@GenerateTable(lowerCase = false)
 data class User(
     val id: Long,
     val firstName: String,

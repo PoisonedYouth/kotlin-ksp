@@ -1,5 +1,8 @@
 package com.poisonedyouth.processor
 
+import com.google.devtools.ksp.KspExperimental
+import com.google.devtools.ksp.getAnnotationsByType
+import com.google.devtools.ksp.isAnnotationPresent
 import com.google.devtools.ksp.processing.CodeGenerator
 import com.google.devtools.ksp.processing.Dependencies
 import com.google.devtools.ksp.processing.Resolver
@@ -17,32 +20,41 @@ import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.asClassName
 import com.squareup.kotlinpoet.asTypeName
+import com.squareup.kotlinpoet.ksp.toAnnotationSpec
 import com.squareup.kotlinpoet.ksp.toClassName
 import org.jetbrains.exposed.dao.id.LongIdTable
 import org.jetbrains.exposed.sql.Column
 import java.time.LocalDate
+import java.util.regex.Pattern
+
+private const val TABLE_NAME_POSTFIX = "Table"
 
 class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolProcessor {
     override fun process(resolver: Resolver): List<KSAnnotated> {
+        // Filter the classes with the matching annotation
         val annotatedClasses = resolver.getSymbolsWithAnnotation(GenerateTable::class.java.name)
             .filterIsInstance<KSClassDeclaration>()
 
+        // For all annotated classes do the generation process
         for (annotatedClass in annotatedClasses) {
-            val className = annotatedClass.simpleName.asString() + "Table"
+
+            // Specify class name
+            val className = annotatedClass.simpleName.asString() + TABLE_NAME_POSTFIX
+
+            // Create an object builder
             val typeBuilder = TypeSpec.objectBuilder(className)
                 .superclass(
                     LongIdTable::class.asClassName(),
                 )
                 .addSuperclassConstructorParameter(
                     CodeBlock.of(
-                        "%1S,%2S",
-                        annotatedClass.simpleName.asString().lowercase(),
-                        annotatedClass.getAllProperties()
-                            .filter { it.simpleName.asString().contains("id") }
-                            .map { it.simpleName.getShortName() }
-                            .first()
+                        format = "%1S,%2S",
+                        getTablename(annotatedClass),
+                        getIdProperty(annotatedClass)
                     )
                 )
+
+            // Create property specs
             val propertySpecs = annotatedClass.getAllProperties()
                 .filter { !it.simpleName.asString().contains("id") }
                 .map {
@@ -57,6 +69,7 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
             typeBuilder.addProperties(propertySpecs.asIterable())
 
 
+            // Create the file spec builder
             val fileSpec = FileSpec.builder(annotatedClass.packageName.asString(), className)
                 .addType(typeBuilder.build())
                 .build()
@@ -68,10 +81,32 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
                 .writer()
                 .use { fileSpec.writeTo(it) }
         }
+        // There are no additional processing rounds necessary
         return emptyList()
     }
 
+    private fun getIdProperty(annotatedClass: KSClassDeclaration) = annotatedClass.getAllProperties()
+        .filter { it.simpleName.asString().contains("id") }
+        .map { it.simpleName.getShortName() }
+        .first()
 
+    @OptIn(KspExperimental::class)
+    private fun getTablename(annotatedClass: KSClassDeclaration): String {
+        val annotation = annotatedClass.getAnnotationsByType(GenerateTable::class)
+            .first()
+        val tableName = annotatedClass.simpleName.asString().let {
+            if (annotation.lowerCase) {
+                it.lowercase()
+            } else {
+                it
+            }
+        }
+        val regex = Regex.fromLiteral("^[A-Za-z_]*\$")
+        require(!regex.matches(tableName)) {
+            "Table name '$tableName' does not comply with naming requriements."
+        }
+        return tableName
+    }
 }
 
 private fun getInitValue(type: KSType, columnName: String): CodeBlock {
