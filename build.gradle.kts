@@ -27,8 +27,11 @@ kotlin {
     }
 }
 
-repositories {
-    mavenCentral()
+allprojects {
+
+    repositories {
+        mavenCentral()
+    }
 }
 
 dependencies {
