@@ -2,6 +2,7 @@ package com.poisonedyouth.processor
 
 import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.getAnnotationsByType
+import com.google.devtools.ksp.isAnnotationPresent
 import com.google.devtools.ksp.processing.CodeGenerator
 import com.google.devtools.ksp.processing.Dependencies
 import com.google.devtools.ksp.processing.Resolver
@@ -28,7 +29,6 @@ import java.time.LocalDate
 private const val TABLE_NAME_POSTFIX = "Table"
 
 private val tableNameRegex = Regex.fromLiteral("^[A-Za-z_]*\$")
-private val tableIdRegex = Regex.fromLiteral("^[id]*\$")
 
 @OptIn(KspExperimental::class)
 class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolProcessor {
@@ -39,6 +39,10 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
 
         // For all annotated classes do the generation process
         for (annotatedClass in annotatedClasses) {
+            // Check if required primary key annotation is set
+            require(annotatedClass.getAllProperties().any { it.isAnnotationPresent(PrimaryKey::class) }) {
+                "Required '@PrimaryKey' annotation is missing for specifying primary key property."
+            }
 
             // Specify class name
             val className = annotatedClass.simpleName.asString() + TABLE_NAME_POSTFIX
@@ -58,7 +62,7 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
 
             // Create property specs
             val propertySpecs = annotatedClass.getAllProperties()
-                .filter { !it.simpleName.asString().contains("id") }
+                .filter { it.getAnnotationsByType(PrimaryKey::class).firstOrNull() == null }
                 .map {
                     PropertySpec.builder(
                         name = it.simpleName.asString(),
@@ -109,26 +113,27 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
         }
         return tableName
     }
-}
 
-private fun getInitValue(type: KSType, columnName: String): CodeBlock {
-    val date = MemberName("org.jetbrains.exposed.sql.javatime", "date")
-    val varchar = MemberName("", "varchar")
-    val long = MemberName("", "long")
+    private fun getInitValue(type: KSType, columnName: String): CodeBlock {
+        val date = MemberName("org.jetbrains.exposed.sql.javatime", "date")
+        val varchar = MemberName("", "varchar")
+        val long = MemberName("", "long")
 
-    return when (type.toClassName().simpleName) {
-        "String" -> CodeBlock.of("%M(\"$columnName\", 255)", varchar)
-        "Long" -> CodeBlock.of("%M(\"$columnName\")", long)
-        "LocalDate" -> CodeBlock.of("%M(\"$columnName\")", date)
-        else -> error("Invalid column type '${type.toClassName().simpleName}'.")
+        return when (type.toClassName()) {
+            String::class.asClassName() -> CodeBlock.of("%M(\"$columnName\", 255)", varchar)
+            Long::class.asClassName() -> CodeBlock.of("%M(\"$columnName\")", long)
+            LocalDate::class.asClassName() -> CodeBlock.of("%M(\"$columnName\")", date)
+            else -> error("Invalid column type '${type.toClassName().simpleName}'.")
+        }
     }
-}
 
-private fun getType(type: KSType): TypeName {
-    return when (type.toClassName().simpleName) {
-        "String" -> Column::class.asTypeName().plusParameter(String::class.asTypeName())
-        "Long" -> Column::class.asTypeName().plusParameter(Long::class.asTypeName())
-        "LocalDate" -> Column::class.asTypeName().plusParameter(LocalDate::class.asTypeName())
-        else -> error("Invalid column type '${type.toClassName().simpleName}'.")
+    private fun getType(type: KSType): TypeName {
+        return when (type.toClassName()) {
+            String::class.asClassName() -> Column::class.asTypeName().plusParameter(String::class.asTypeName())
+            Long::class.asClassName() -> Column::class.asTypeName().plusParameter(Long::class.asTypeName())
+            LocalDate::class.asClassName() -> Column::class.asTypeName().plusParameter(LocalDate::class.asTypeName())
+            // Need to add additional types
+            else -> error("Invalid column type '${type.toClassName().simpleName}'.")
+        }
     }
 }
