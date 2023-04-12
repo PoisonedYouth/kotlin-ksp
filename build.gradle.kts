@@ -42,8 +42,6 @@ dependencies {
     runtimeOnly("org.jetbrains.exposed:exposed-jdbc:$exposedVersion")
     implementation("org.jetbrains.exposed:exposed-java-time:$exposedVersion")
 
-    testImplementation("io.ktor:ktor-server-tests-jvm:$ktorVersion")
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:$kotlinVersion")
     implementation(project(":annotations"))
     ksp(project(":annotation-processor"))
 }

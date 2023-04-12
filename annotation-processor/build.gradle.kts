@@ -1,7 +1,12 @@
 val exposedVersion: String by project
+val junit5Version: String by project
 
 plugins {
     kotlin("jvm")
+}
+
+tasks.withType(Test::class.java) {
+    useJUnitPlatform()
 }
 
 dependencies {
@@ -11,4 +16,8 @@ dependencies {
 
     implementation("org.jetbrains.exposed:exposed-core:$exposedVersion")
     implementation("org.jetbrains.exposed:exposed-java-time:$exposedVersion")
+
+    testImplementation("com.github.tschuchortdev:kotlin-compile-testing-ksp:1.5.0")
+    testImplementation("org.junit.jupiter:junit-jupiter-api:$junit5Version")
+    testImplementation("org.junit.jupiter:junit-jupiter-engine:$junit5Version")
 }
