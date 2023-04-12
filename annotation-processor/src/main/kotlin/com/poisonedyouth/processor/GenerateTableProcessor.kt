@@ -2,7 +2,6 @@ package com.poisonedyouth.processor
 
 import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.getAnnotationsByType
-import com.google.devtools.ksp.isAnnotationPresent
 import com.google.devtools.ksp.processing.CodeGenerator
 import com.google.devtools.ksp.processing.Dependencies
 import com.google.devtools.ksp.processing.Resolver
@@ -11,6 +10,7 @@ import com.google.devtools.ksp.symbol.KSAnnotated
 import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSType
 import com.poisonedyouth.annotation.GenerateTable
+import com.poisonedyouth.annotation.PrimaryKey
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.MemberName
@@ -20,14 +20,15 @@ import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.asClassName
 import com.squareup.kotlinpoet.asTypeName
-import com.squareup.kotlinpoet.ksp.toAnnotationSpec
 import com.squareup.kotlinpoet.ksp.toClassName
 import org.jetbrains.exposed.dao.id.LongIdTable
 import org.jetbrains.exposed.sql.Column
 import java.time.LocalDate
-import java.util.regex.Pattern
 
 private const val TABLE_NAME_POSTFIX = "Table"
+
+private val tableNameRegex = Regex.fromLiteral("^[A-Za-z_]*\$")
+private val tableIdRegex = Regex.fromLiteral("^[id]*\$")
 
 class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolProcessor {
     override fun process(resolver: Resolver): List<KSAnnotated> {
@@ -49,7 +50,7 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
                 .addSuperclassConstructorParameter(
                     CodeBlock.of(
                         format = "%1S,%2S",
-                        getTablename(annotatedClass),
+                        getTableName(annotatedClass),
                         getIdProperty(annotatedClass)
                     )
                 )
@@ -85,13 +86,14 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
         return emptyList()
     }
 
+    @OptIn(KspExperimental::class)
     private fun getIdProperty(annotatedClass: KSClassDeclaration) = annotatedClass.getAllProperties()
-        .filter { it.simpleName.asString().contains("id") }
+        .filter { it.getAnnotationsByType(PrimaryKey::class).firstOrNull() != null }
         .map { it.simpleName.getShortName() }
-        .first()
+        .single()
 
     @OptIn(KspExperimental::class)
-    private fun getTablename(annotatedClass: KSClassDeclaration): String {
+    private fun getTableName(annotatedClass: KSClassDeclaration): String {
         val annotation = annotatedClass.getAnnotationsByType(GenerateTable::class)
             .first()
         val tableName = annotatedClass.simpleName.asString().let {
@@ -101,8 +103,7 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
                 it
             }
         }
-        val regex = Regex.fromLiteral("^[A-Za-z_]*\$")
-        require(!regex.matches(tableName)) {
+        require(!tableNameRegex.matches(tableName)) {
             "Table name '$tableName' does not comply with naming requriements."
         }
         return tableName
