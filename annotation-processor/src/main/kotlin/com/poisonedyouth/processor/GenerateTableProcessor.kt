@@ -80,7 +80,7 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
                 .addType(typeBuilder.build())
                 .build()
             codeGenerator.createNewFile(
-                Dependencies(false, annotatedClass.containingFile!!),
+                Dependencies(false, annotatedClass.containingFile ?: error("No containing file available!")),
                 fileSpec.packageName,
                 fileSpec.name
             )
