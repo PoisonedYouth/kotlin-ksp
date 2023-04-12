@@ -30,6 +30,7 @@ private const val TABLE_NAME_POSTFIX = "Table"
 private val tableNameRegex = Regex.fromLiteral("^[A-Za-z_]*\$")
 private val tableIdRegex = Regex.fromLiteral("^[id]*\$")
 
+@OptIn(KspExperimental::class)
 class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolProcessor {
     override fun process(resolver: Resolver): List<KSAnnotated> {
         // Filter the classes with the matching annotation
@@ -86,21 +87,21 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
         return emptyList()
     }
 
-    @OptIn(KspExperimental::class)
     private fun getIdProperty(annotatedClass: KSClassDeclaration) = annotatedClass.getAllProperties()
         .filter { it.getAnnotationsByType(PrimaryKey::class).firstOrNull() != null }
         .map { it.simpleName.getShortName() }
         .single()
 
-    @OptIn(KspExperimental::class)
     private fun getTableName(annotatedClass: KSClassDeclaration): String {
         val annotation = annotatedClass.getAnnotationsByType(GenerateTable::class)
             .first()
-        val tableName = annotatedClass.simpleName.asString().let {
-            if (annotation.lowerCase) {
-                it.lowercase()
-            } else {
-                it
+        val tableName = annotation.tableName.ifEmpty {
+            annotatedClass.simpleName.asString().let {
+                if (annotation.lowerCase) {
+                    it.lowercase()
+                } else {
+                    it
+                }
             }
         }
         require(!tableNameRegex.matches(tableName)) {
