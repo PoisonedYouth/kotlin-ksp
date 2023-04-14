@@ -10,3 +10,9 @@ annotation class GenerateTable(
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.FIELD)
 annotation class PrimaryKey
+
+@Retention(AnnotationRetention.SOURCE)
+@Target(AnnotationTarget.FIELD)
+annotation class UniqueIndex(
+    val uniqueKey: String
+)

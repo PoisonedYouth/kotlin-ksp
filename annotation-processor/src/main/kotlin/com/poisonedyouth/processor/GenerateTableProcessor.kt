@@ -5,7 +5,6 @@ import com.google.devtools.ksp.getAnnotationsByType
 import com.google.devtools.ksp.isAnnotationPresent
 import com.google.devtools.ksp.processing.CodeGenerator
 import com.google.devtools.ksp.processing.Dependencies
-import com.google.devtools.ksp.processing.KSPLogger
 import com.google.devtools.ksp.processing.Resolver
 import com.google.devtools.ksp.processing.SymbolProcessor
 import com.google.devtools.ksp.symbol.KSAnnotated
@@ -13,6 +12,7 @@ import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSType
 import com.poisonedyouth.annotation.GenerateTable
 import com.poisonedyouth.annotation.PrimaryKey
+import com.poisonedyouth.annotation.UniqueIndex
 import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FileSpec
@@ -34,7 +34,7 @@ private const val TABLE_NAME_POSTFIX = "Table"
 private val tableNameRegex = Regex.fromLiteral("^[A-Za-z_]*\$")
 
 @OptIn(KspExperimental::class)
-class GenerateTableProcessor(private val codeGenerator: CodeGenerator, private val logger: KSPLogger) : SymbolProcessor {
+class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolProcessor {
     override fun process(resolver: Resolver): List<KSAnnotated> {
         // Filter the classes with the matching annotation
         val annotatedClasses = resolver.getSymbolsWithAnnotation(GenerateTable::class.java.name)
@@ -81,6 +81,7 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator, private v
                     )
                         .initializer(
                             getInitValue(
+                                annotatedClass = annotatedClass,
                                 type = it.type.resolve(),
                                 customTypes = customTypes,
                                 columnName = it.simpleName.asString()
@@ -130,25 +131,45 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator, private v
         return tableName
     }
 
-    private fun getInitValue(type: KSType, customTypes: List<ClassName>, columnName: String): CodeBlock {
+    private fun getInitValue(annotatedClass: KSClassDeclaration, type: KSType, customTypes: List<ClassName>, columnName: String): CodeBlock {
         val date = MemberName("org.jetbrains.exposed.sql.javatime", "date")
         val varchar = MemberName("", "varchar")
         val long = MemberName("", "long")
         val int = MemberName("", "integer")
         val reference = MemberName("", "reference")
+        val uniqueIndex = MemberName("", "uniqueIndex")
+
+        val annotation = annotatedClass.getAllProperties()
+            .filter { it.simpleName.asString() == columnName }
+            .mapNotNull { it.getAnnotationsByType(UniqueIndex::class).firstOrNull() }.firstOrNull()
 
         val className = customTypes.firstOrNull { it.simpleName == type.toString() }
         if (className != null) {
-            return CodeBlock.of("%M(\"$columnName\", ${type}$TABLE_NAME_POSTFIX)", reference)
+            if(annotation != null) {
+                return CodeBlock.of("%1M(\"$columnName\", ${type}$TABLE_NAME_POSTFIX).%2M(%3S)", reference, uniqueIndex, annotation.uniqueKey)
+            }else {
+                return CodeBlock.of("%M(\"$columnName\", ${type}$TABLE_NAME_POSTFIX)", reference)
+            }
         }
 
-        return when (type.toClassName()) {
-            String::class.asClassName() -> CodeBlock.of("%M(\"$columnName\", 255)", varchar)
-            Long::class.asClassName() -> CodeBlock.of("%M(\"$columnName\")", long)
-            Int::class.asClassName() -> CodeBlock.of("%M(\"$columnName\")", int)
-            LocalDate::class.asClassName() -> CodeBlock.of("%M(\"$columnName\")", date)
-            else -> error("Invalid column type '${type.toClassName().simpleName}'.")
+        return if (annotation != null) {
+            when (type.toClassName()) {
+                String::class.asClassName() -> CodeBlock.of("%1M(\"$columnName\", 255).%2M(%3S)", varchar, uniqueIndex, annotation.uniqueKey)
+                Long::class.asClassName() -> CodeBlock.of("%M(\"$columnName\").%2M(%3S)", long, uniqueIndex, annotation.uniqueKey)
+                Int::class.asClassName() -> CodeBlock.of("%M(\"$columnName\").%2M(%3S)", int, uniqueIndex, annotation.uniqueKey)
+                LocalDate::class.asClassName() -> CodeBlock.of("%M(\"$columnName\").%2M(%3S)", date, uniqueIndex, annotation.uniqueKey)
+                else -> error("Invalid column type '${type.toClassName().simpleName}'.")
+            }
+        } else {
+            when (type.toClassName()) {
+                String::class.asClassName() -> CodeBlock.of("%M(\"$columnName\", 255)", varchar)
+                Long::class.asClassName() -> CodeBlock.of("%M(\"$columnName\")", long)
+                Int::class.asClassName() -> CodeBlock.of("%M(\"$columnName\")", int)
+                LocalDate::class.asClassName() -> CodeBlock.of("%M(\"$columnName\")", date)
+                else -> error("Invalid column type '${type.toClassName().simpleName}'.")
+            }
         }
+
     }
 
     private fun getType(type: KSType, customTypes: List<ClassName>): TypeName {
