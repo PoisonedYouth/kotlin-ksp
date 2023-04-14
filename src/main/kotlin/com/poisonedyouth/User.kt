@@ -10,5 +10,16 @@ data class User(
     val id: Long,
     val firstName: String,
     val lastName: String,
-    val birthDate: LocalDate
+    val birthDate: LocalDate,
+    val address: Address
+)
+
+@GenerateTable
+data class Address(
+    @PrimaryKey
+    val id: Long,
+    val street: String,
+    val streetNumber: String,
+    val zipCode: Int,
+    val city: String
 )

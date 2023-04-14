@@ -6,6 +6,6 @@ import com.google.devtools.ksp.processing.SymbolProcessorProvider
 
 class GenerateTableProcessorProvider : SymbolProcessorProvider {
     override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor {
-        return GenerateTableProcessor(environment.codeGenerator)
+        return GenerateTableProcessor(environment.codeGenerator, environment.logger)
     }
 }

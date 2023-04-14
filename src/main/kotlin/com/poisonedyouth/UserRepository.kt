@@ -20,12 +20,21 @@ class UserRepositoryImpl : UserRepository {
     }
 
     override fun findById(userId: Long): User? = transaction {
-        UserTable.select { UserTable.id eq userId }.firstOrNull()?.let {
+        UserTable.select { UserTable.id eq userId }.firstOrNull()?.let { userResultRow ->
             User(
-                id = it[UserTable.id].value,
-                firstName = it[UserTable.firstName],
-                lastName = it[UserTable.lastName],
-                birthDate = it[UserTable.birthDate]
+                id = userResultRow[UserTable.id].value,
+                firstName = userResultRow[UserTable.firstName],
+                lastName = userResultRow[UserTable.lastName],
+                birthDate = userResultRow[UserTable.birthDate],
+                address = AddressTable.select { AddressTable.id eq userResultRow[UserTable.address].value }.first().let {
+                    Address(
+                        id = it[AddressTable.id].value,
+                        street = it[AddressTable.street],
+                        streetNumber = it[AddressTable.streetNumber],
+                        zipCode = it[AddressTable.zipCode],
+                        city = it[AddressTable.city]
+                    )
+                }
             )
         }
     }

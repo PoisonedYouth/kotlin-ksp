@@ -5,6 +5,7 @@ import com.google.devtools.ksp.getAnnotationsByType
 import com.google.devtools.ksp.isAnnotationPresent
 import com.google.devtools.ksp.processing.CodeGenerator
 import com.google.devtools.ksp.processing.Dependencies
+import com.google.devtools.ksp.processing.KSPLogger
 import com.google.devtools.ksp.processing.Resolver
 import com.google.devtools.ksp.processing.SymbolProcessor
 import com.google.devtools.ksp.symbol.KSAnnotated
@@ -12,6 +13,7 @@ import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSType
 import com.poisonedyouth.annotation.GenerateTable
 import com.poisonedyouth.annotation.PrimaryKey
+import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.MemberName
@@ -22,6 +24,7 @@ import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.asClassName
 import com.squareup.kotlinpoet.asTypeName
 import com.squareup.kotlinpoet.ksp.toClassName
+import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.dao.id.LongIdTable
 import org.jetbrains.exposed.sql.Column
 import java.time.LocalDate
@@ -31,11 +34,15 @@ private const val TABLE_NAME_POSTFIX = "Table"
 private val tableNameRegex = Regex.fromLiteral("^[A-Za-z_]*\$")
 
 @OptIn(KspExperimental::class)
-class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolProcessor {
+class GenerateTableProcessor(private val codeGenerator: CodeGenerator, private val logger: KSPLogger) : SymbolProcessor {
     override fun process(resolver: Resolver): List<KSAnnotated> {
         // Filter the classes with the matching annotation
         val annotatedClasses = resolver.getSymbolsWithAnnotation(GenerateTable::class.java.name)
             .filterIsInstance<KSClassDeclaration>()
+
+        val customTypes = resolver.getSymbolsWithAnnotation(GenerateTable::class.java.name)
+            .filterIsInstance<KSClassDeclaration>()
+            .map { it.toClassName() }.toList()
 
         // For all annotated classes do the generation process
         for (annotatedClass in annotatedClasses) {
@@ -66,10 +73,19 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
                 .map {
                     PropertySpec.builder(
                         name = it.simpleName.asString(),
-                        type = getType(it.type.resolve()),
+                        type = getType(
+                            type = it.type.resolve(),
+                            customTypes = customTypes
+                        ),
                         modifiers = emptyList()
                     )
-                        .initializer(getInitValue(it.type.resolve(), it.simpleName.asString()))
+                        .initializer(
+                            getInitValue(
+                                type = it.type.resolve(),
+                                customTypes = customTypes,
+                                columnName = it.simpleName.asString()
+                            )
+                        )
                         .build()
                 }
             typeBuilder.addProperties(propertySpecs.asIterable())
@@ -114,26 +130,41 @@ class GenerateTableProcessor(private val codeGenerator: CodeGenerator) : SymbolP
         return tableName
     }
 
-    private fun getInitValue(type: KSType, columnName: String): CodeBlock {
+    private fun getInitValue(type: KSType, customTypes: List<ClassName>, columnName: String): CodeBlock {
         val date = MemberName("org.jetbrains.exposed.sql.javatime", "date")
         val varchar = MemberName("", "varchar")
         val long = MemberName("", "long")
+        val int = MemberName("", "integer")
+        val reference = MemberName("", "reference")
+
+        val className = customTypes.firstOrNull { it.simpleName == type.toString() }
+        if (className != null) {
+            return CodeBlock.of("%M(\"$columnName\", ${type}$TABLE_NAME_POSTFIX)", reference)
+        }
 
         return when (type.toClassName()) {
             String::class.asClassName() -> CodeBlock.of("%M(\"$columnName\", 255)", varchar)
             Long::class.asClassName() -> CodeBlock.of("%M(\"$columnName\")", long)
+            Int::class.asClassName() -> CodeBlock.of("%M(\"$columnName\")", int)
             LocalDate::class.asClassName() -> CodeBlock.of("%M(\"$columnName\")", date)
             else -> error("Invalid column type '${type.toClassName().simpleName}'.")
         }
     }
 
-    private fun getType(type: KSType): TypeName {
+    private fun getType(type: KSType, customTypes: List<ClassName>): TypeName {
+        val className = customTypes.firstOrNull { it.simpleName == type.toString() }
+
+        if (className != null) {
+            return Column::class.asTypeName().plusParameter(EntityID::class.asTypeName().plusParameter(Long::class.asTypeName()))
+        }
         return when (type.toClassName()) {
             String::class.asClassName() -> Column::class.asTypeName().plusParameter(String::class.asTypeName())
             Long::class.asClassName() -> Column::class.asTypeName().plusParameter(Long::class.asTypeName())
+            Int::class.asClassName() -> Column::class.asTypeName().plusParameter(Int::class.asTypeName())
             LocalDate::class.asClassName() -> Column::class.asTypeName().plusParameter(LocalDate::class.asTypeName())
             // Need to add additional types
-            else -> error("Invalid column type '${type.toClassName().simpleName}'.")
+
+            else -> error("Invalid column type '${type.toClassName().simpleName}' not part of $customTypes.")
         }
     }
 }
