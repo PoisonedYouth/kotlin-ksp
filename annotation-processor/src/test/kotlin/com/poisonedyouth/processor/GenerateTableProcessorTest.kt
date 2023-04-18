@@ -260,6 +260,84 @@ class GenerateTableProcessorTest {
     }
 
     @Test
+    fun `should generate valid table object with reference`() {
+        // given
+        val source = """
+                import com.poisonedyouth.annotation.GenerateTable
+                import com.poisonedyouth.annotation.PrimaryKey
+                import com.poisonedyouth.annotation.UniqueIndex
+                import java.time.LocalDate
+                
+                @GenerateTable(lowerCase = false)
+                data class User(
+                    @PrimaryKey
+                    val id: Long,
+                    @UniqueIndex(uniqueKey = "name")
+                    val firstName: String,
+                    val lastName: String,
+                    val birthDate: LocalDate,
+                    val address: Address
+                )
+                
+                @GenerateTable
+                data class Address(
+                    @PrimaryKey
+                    val id: Long,
+                    val street: String,
+                    val streetNumber: String,
+                    val zipCode: Int,
+                    val city: String
+                )
+           """
+
+        // when
+        val compilation = KotlinCompilation().apply {
+            inheritClassPath = true
+            kspWithCompilation = true
+
+
+            sources = listOf(
+                SourceFile.kotlin("User.kt", source)
+            )
+            symbolProcessorProviders = listOf(
+                GenerateTableProcessorProvider()
+            )
+        }
+        val result = compilation.compile()
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode)
+
+        // then
+        val expectedResult = """
+                import java.time.LocalDate
+                import kotlin.Long
+                import kotlin.String
+                import org.jetbrains.exposed.dao.id.EntityID
+                import org.jetbrains.exposed.dao.id.LongIdTable
+                import org.jetbrains.exposed.sql.Column
+                import org.jetbrains.exposed.sql.javatime.date
+                
+                public object UserTable : LongIdTable("User","id") {
+                  public val firstName: Column<String> = varchar("firstName", 255).uniqueIndex("name")
+                
+                  public val lastName: Column<String> = varchar("lastName", 255)
+                
+                  public val birthDate: Column<LocalDate> = date("birthDate")
+                
+                  public val address: Column<EntityID<Long>> = reference("address", AddressTable)
+                }
+           """
+
+        val generated = File(
+            compilation.kspSourcesDir,
+            "kotlin/UserTable.kt"
+        )
+        assertEquals(
+            expectedResult.trimIndent(),
+            generated.readText().trimIndent()
+        )
+    }
+
+    @Test
     fun `should fail with missing @PrimaryKey annotation`() {
         // given
         val source = """
